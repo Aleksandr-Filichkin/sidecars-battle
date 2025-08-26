@@ -1,0 +1,89 @@
+static_resources:
+  listeners:
+  - name: http_listener
+    address:
+      socket_address: { address: 0.0.0.0, port_value: 10000 }
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: ingress_http
+          route_config:
+            name: local_route
+            virtual_hosts:
+            - name: backend
+              domains: ["*"]
+              routes:
+              - match: { path: "/ready" }
+                direct_response:
+                  status: 200
+                  body:
+                    inline_string: "OK"
+              - match: { prefix: "/" }
+                route: { cluster: app_cluster }
+          http_filters:
+          - name: envoy.filters.http.jwt_authn
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.jwt_authn.v3.JwtAuthentication
+              providers:
+                example:
+                  issuer: "https://id.example.com/"
+                  remote_jwks:
+                    http_uri:
+                      uri: "https://auth.example.com/.well-known/jwks.json"
+                      cluster: jwks
+                      timeout: 5s
+                  forward: true
+                  claim_to_headers:
+                  - header_name: "x-forwarded-user"
+                    claim_name: "sub"
+              rules:
+              - match: { prefix: "/private" }
+                requires:
+                  provider_name: "example"
+          - name: envoy.filters.http.router
+            typed_config: { "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router }
+  clusters:
+  - name: app_cluster
+    connect_timeout: 1s
+    type: STATIC
+    load_assignment:
+      cluster_name: app_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address: { address: 127.0.0.1, port_value: 8080 }
+    health_checks:
+    - timeout: 1s
+      interval: 5s
+      unhealthy_threshold: 3
+      healthy_threshold: 1
+      http_health_check:
+        path: /actuator/health/readiness
+        expected_statuses:
+        - start: 200
+          end: 201
+  - name: jwks
+    connect_timeout: 2s
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+    load_assignment:
+      cluster_name: jwks
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address: { address: auth.example.com, port_value: 443 }
+    transport_socket:
+      name: envoy.transport_sockets.tls
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.UpstreamTlsContext
+        sni: auth.example.com
+
+admin:
+  access_log_path: "/dev/null"
+  address:
+    socket_address: { address: 0.0.0.0, port_value: 9901 }
+

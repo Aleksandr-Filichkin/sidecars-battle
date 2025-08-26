@@ -1,0 +1,34 @@
+http:
+  routers:
+    app-default:
+      rule: "PathPrefix(`/`) && !PathPrefix(`/private`) && !PathPrefix(`/ping`)"
+      service: "app"
+      entryPoints:
+        - "web"
+      priority: 1
+    app-protected:
+      rule: "PathPrefix(`/private`)"
+      service: "app"
+      entryPoints:
+        - "web"
+      middlewares:
+        - "jwt"
+      priority: 100
+
+  services:
+    app:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:8080"
+
+  middlewares:
+    jwt:
+      plugin:
+        traefik-jwt-plugin:
+          Required: true
+          PayloadFields:
+            - "exp"
+          Keys:
+            - "https://auth.example.com/.well-known/jwks.json"
+          JwtHeaders:
+            X-Forwarded-User: "sub"

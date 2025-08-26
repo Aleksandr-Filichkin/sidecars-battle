@@ -1,0 +1,16 @@
+experimental:
+  plugins:
+    traefik-jwt-plugin:
+      moduleName: "github.com/traefik-plugins/traefik-jwt-plugin"
+      version: "v0.7.1"
+
+entryPoints:
+  web:
+    address: ":10000"
+
+providers:
+  file:
+    filename: /etc/traefik/traefik-dynamic.yml
+
+ping:
+  entryPoint: web
